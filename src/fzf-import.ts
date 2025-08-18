@@ -25,27 +25,21 @@ export class FzfImport {
       throw new Error(`Unsupported file type: ${fileType}`);
     }
 
-    this.log(`Searching for imports containing: ${keyword}`);
+    this.log(`Streaming search for imports containing: ${keyword}`);
     this.log(`File type: ${fileType}`);
     this.log(`Pattern: ${searchResult.pattern}`);
 
-    const imports = await this.searchImports(searchResult.pattern, searchResult.glob, filePath);
-    
-    if (imports.length === 0) {
-      console.log('No imports found matching the keyword.');
-      return;
-    }
+    // Use streaming search for real-time results
+    const selected = await this.streamingSearchAndSelect(
+      searchResult.pattern,
+      filePath,
+      `Select import for "${keyword}"`
+    );
 
-    // If only one result, use it directly
-    if (imports.length === 1) {
-      await this.addImportToFile(filePath, imports[0]);
-      return;
-    }
-
-    // Multiple results, use fzf for selection
-    const selected = await this.selectWithFzf(imports, `Select import for "${keyword}"`);
     if (selected) {
       await this.addImportToFile(filePath, selected);
+    } else {
+      console.log('No import selected or no matches found.');
     }
   }
 
@@ -78,23 +72,23 @@ export class FzfImport {
       throw new Error(`Unsupported file type: ${fileType}`);
     }
 
-    this.log(`Interactive mode for: ${filePath}`);
+    this.log(`Interactive streaming mode for: ${filePath}`);
     this.log(`File type: ${fileType}`);
 
     // Search for all import statements (remove %s placeholders for general search)
     const pattern = config.regex.replace(/%s/g, '\\w+');
-    const glob = `--glob '*.{${config.glob.join(',')}}'`;
 
-    const imports = await this.searchImports(pattern, glob, filePath);
-    
-    if (imports.length === 0) {
-      console.log('No imports found in the project.');
-      return;
-    }
+    // Use streaming search for real-time results
+    const selected = await this.streamingSearchAndSelect(
+      pattern,
+      filePath,
+      'Select import to add'
+    );
 
-    const selected = await this.selectWithFzf(imports, 'Select import to add');
     if (selected) {
       await this.addImportToFile(filePath, selected);
+    } else {
+      console.log('No import selected or no matches found.');
     }
   }
 
@@ -154,7 +148,124 @@ export class FzfImport {
   }
 
   /**
-   * Use fzf to select from a list of options
+   * Stream search results directly from ripgrep to fzf for real-time filtering
+   */
+  private async streamingSearchAndSelect(pattern: string, targetFile: string, prompt: string): Promise<string | null> {
+    return new Promise((resolve, reject) => {
+      const cwd = Utils.findProjectRoot(targetFile);
+      const rgArgs = [
+        pattern,
+        ...Config.ripgrepOptions.extraArgs,
+        '--glob', `*.{ts,tsx,js,jsx}`,
+        '--type-not', 'lock',
+        '.'
+      ];
+
+      const fzfArgs = [
+        '--prompt', `${prompt}> `,
+        '--height', '40%',
+        '--layout', 'reverse',
+        '--border'
+      ];
+
+      this.log(`Streaming search: rg ${rgArgs.join(' ')} | fzf`);
+      this.log(`Project root: ${cwd}`);
+
+      // Start both processes
+      const rg = spawn('rg', rgArgs, { cwd });
+      const fzf = spawn('fzf', fzfArgs);
+
+      let fzfOutput = '';
+      let fzfError = '';
+
+      // Pipe ripgrep output directly to fzf input
+      rg.stdout.pipe(fzf.stdin);
+
+      // Handle pipe errors (EPIPE when fzf closes early)
+      rg.stdout.on('error', (err: any) => {
+        if (err.code === 'EPIPE') {
+          this.log('Ripgrep stdout pipe closed (expected when selection made)');
+          return;
+        }
+        this.log(`Ripgrep stdout error: ${err.message}`);
+      });
+
+      // Handle fzf output
+      fzf.stdout.on('data', (data) => {
+        fzfOutput += data.toString();
+      });
+
+      fzf.stderr.on('data', (data) => {
+        fzfError += data.toString();
+      });
+
+      // Handle ripgrep errors
+      rg.stderr.on('data', (data) => {
+        this.log(`ripgrep error: ${data.toString()}`);
+      });
+
+      // When ripgrep finishes, close fzf input
+      rg.on('close', (code) => {
+        if (code === 1) {
+          // No matches found - close fzf stdin gracefully
+          fzf.stdin.end();
+        } else if (code !== 0) {
+          fzf.kill();
+          reject(new Error(`ripgrep failed with code ${code}`));
+          return;
+        } else {
+          // Success - close fzf stdin
+          fzf.stdin.end();
+        }
+      });
+
+      // Handle fzf completion
+      fzf.on('close', (code) => {
+        // Kill ripgrep when fzf closes to prevent EPIPE errors
+        if (!rg.killed) {
+          rg.kill('SIGTERM');
+          // Force kill after timeout if needed
+          setTimeout(() => {
+            if (!rg.killed) {
+              rg.kill('SIGKILL');
+            }
+          }, 1000);
+        }
+
+        if (code === 130) {
+          // User cancelled
+          console.log('Selection cancelled.');
+          resolve(null);
+          return;
+        }
+
+        if (code !== 0) {
+          reject(new Error(`fzf failed with code ${code}: ${fzfError}`));
+          return;
+        }
+
+        const selected = fzfOutput.trim();
+        resolve(selected || null);
+      });
+
+      // Handle process errors
+      rg.on('error', (err: any) => {
+        // EPIPE is expected when fzf closes early - don't treat as error
+        if (err.code === 'EPIPE') {
+          this.log('Ripgrep pipe closed (expected when selection made)');
+          return;
+        }
+        reject(new Error(`Failed to start ripgrep: ${err.message}`));
+      });
+
+      fzf.on('error', (err) => {
+        reject(new Error(`Failed to start fzf: ${err.message}`));
+      });
+    });
+  }
+
+  /**
+   * Use fzf to select from a list of options (fallback for non-streaming cases)
    */
   private async selectWithFzf(options: string[], prompt: string): Promise<string | null> {
     return new Promise((resolve, reject) => {
