@@ -16,6 +16,9 @@ fzf-import /path/to/file.js
 
 # Direct search mode - search for specific keyword
 fzf-import /path/to/file.js "MyComponent"
+
+# Position-based search - extract symbol at specific position and search
+fzf-import /path/to/file.js:15:8
 ```
 
 ## Requirements

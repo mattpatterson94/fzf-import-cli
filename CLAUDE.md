@@ -8,6 +8,7 @@ A CLI tool for finding and importing JavaScript/TypeScript modules when LSP fail
 
 - **Interactive Mode**: `fzf-import file.ts` - Use fzf to select from available imports
 - **Keyword Search**: `fzf-import file.ts "React"` - Search for specific keyword in imports
+- **Position-Based Search**: `fzf-import file.ts:4:25` - Extract symbol at specific position and search for imports
 - **Smart Import Placement**: Adds imports after existing imports, before code
 - **Duplicate Detection**: Prevents re-adding existing imports
 - **Project-Aware Search**: Searches from nearest package.json directory
@@ -25,7 +26,9 @@ A CLI tool for finding and importing JavaScript/TypeScript modules when LSP fail
 ### Key Functions
 
 - `Utils.findProjectRoot()`: Walks up directories to find nearest package.json
+- `Utils.getSymbolAtPosition()`: Extracts symbol/word at specific file position
 - `FzfImport.searchImports()`: Uses ripgrep to find import statements
+- `FzfImport.searchAndImportAtPosition()`: Position-based import search
 - `FzfImport.selectWithFzf()`: Interactive selection using system fzf
 - `Utils.addImportToFile()`: Smart import insertion with proper placement
 
@@ -80,10 +83,30 @@ pnpm run type-check
 3. Insert new import after last existing import
 4. If no imports exist, insert at first non-comment line
 
+## Position-Based Search
+
+The tool supports IDE-like position-based searching using the format `file:row:col`:
+
+```bash
+./dist/cli.js my-component.ts:15:8
+```
+
+**How it works:**
+1. Parses the file path and position (1-indexed row and column)
+2. Extracts the symbol/word at that specific position
+3. Uses that symbol as the search keyword
+4. Proceeds with normal import search and insertion
+
+**Symbol Extraction:**
+- Uses word boundaries (`[a-zA-Z0-9_$]`) to identify symbols
+- Returns `null` for non-word characters (spaces, punctuation)
+- Handles edge cases (invalid positions, empty positions)
+
 ## Testing
 
 Basic functionality testing:
 - Keyword search: `./dist/cli.js test-file.ts "React"`
+- Position-based search: `./dist/cli.js test-file.ts:4:25` 
 - Interactive mode: `./dist/cli.js test-file.ts`
 - Duplicate detection: Run same command twice
 - Debug mode: Add `--debug` flag for verbose output
