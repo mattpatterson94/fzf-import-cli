@@ -9,7 +9,7 @@ A CLI tool for finding and importing JavaScript/TypeScript modules when LSP fail
 - **Interactive Mode**: `fzf-import file.ts` - Use fzf to select from available imports
 - **Keyword Search**: `fzf-import file.ts "React"` - Search for specific keyword in imports
 - **Position-Based Search**: `fzf-import file.ts:4:25` - Extract symbol at specific position and search for imports
-- **Smart Import Placement**: Adds imports after existing imports, before code
+- **Smart Import Placement**: Adds imports at TOP of import block, after comments
 - **Duplicate Detection**: Prevents re-adding existing imports
 - **Project-Aware Search**: Searches from nearest package.json directory
 - **Multi-Language Support**: TypeScript, JavaScript, TSX, JSX files
@@ -30,7 +30,7 @@ A CLI tool for finding and importing JavaScript/TypeScript modules when LSP fail
 - `FzfImport.searchImports()`: Uses ripgrep to find import statements
 - `FzfImport.searchAndImportAtPosition()`: Position-based import search
 - `FzfImport.selectWithFzf()`: Interactive selection using system fzf
-- `Utils.addImportToFile()`: Smart import insertion with proper placement
+- `Utils.addImportToFile()`: Smart import insertion at TOP of import block
 
 ## Dependencies
 
@@ -79,9 +79,11 @@ pnpm run type-check
 ## Import Placement Strategy
 
 1. Skip comments and empty lines at top of file
-2. Find existing import statements
-3. Insert new import after last existing import
-4. If no imports exist, insert at first non-comment line
+2. Find first existing import statement
+3. Insert new import BEFORE the first existing import
+4. If no imports exist, insert at first non-comment line after headers
+
+**New imports are always placed at the TOP of the import block**
 
 ## Position-Based Search
 

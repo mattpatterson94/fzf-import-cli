@@ -36,7 +36,7 @@ export class Utils {
   }
 
   /**
-   * Add import line to the top of file (after any existing imports)
+   * Add import line before the first existing import, or at the top after comments
    */
   static addImportToFile(filePath: string, importLine: string): void {
     const content = fs.readFileSync(filePath, 'utf8');
@@ -44,25 +44,22 @@ export class Utils {
     
     // Find the best position to insert the import
     let insertIndex = 0;
-    let foundImports = false;
     
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       
       // Skip empty lines and comments at the top
       if (!line || line.startsWith('//') || line.startsWith('/*') || line.startsWith('*')) {
+        insertIndex = i + 1; // Position after comments/empty lines
         continue;
       }
       
-      // If this is an import statement, mark that we found imports
+      // If this is an import statement, insert before it
       if (line.startsWith('import ')) {
-        foundImports = true;
-        insertIndex = i + 1;
-      } else if (foundImports) {
-        // We've passed all imports, stop here
+        insertIndex = i;
         break;
       } else {
-        // First non-comment, non-import line
+        // First non-comment, non-import line - insert here
         insertIndex = i;
         break;
       }
