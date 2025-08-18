@@ -81,4 +81,25 @@ export class Utils {
   static escapeRegex(str: string): string {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
+
+  /**
+   * Find the project root by walking up directories until package.json is found
+   */
+  static findProjectRoot(startPath: string): string {
+    let currentDir = path.dirname(path.resolve(startPath));
+    
+    while (currentDir !== path.dirname(currentDir)) { // Stop at filesystem root
+      const packageJsonPath = path.join(currentDir, 'package.json');
+      
+      if (fs.existsSync(packageJsonPath)) {
+        return currentDir;
+      }
+      
+      // Move up one directory
+      currentDir = path.dirname(currentDir);
+    }
+    
+    // If no package.json found, return the directory of the original file
+    return path.dirname(path.resolve(startPath));
+  }
 }

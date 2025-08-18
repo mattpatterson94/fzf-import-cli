@@ -85,7 +85,7 @@ export class FzfImport {
    */
   private async searchImports(pattern: string, glob: string, targetFile: string): Promise<string[]> {
     return new Promise((resolve, reject) => {
-      const cwd = path.dirname(targetFile);
+      const cwd = Utils.findProjectRoot(targetFile);
       const args = [
         pattern,
         ...Config.ripgrepOptions.extraArgs,
@@ -95,7 +95,7 @@ export class FzfImport {
       ];
 
       this.log(`Running: rg ${args.join(' ')}`);
-      this.log(`Working directory: ${cwd}`);
+      this.log(`Project root: ${cwd}`);
 
       const rg = spawn('rg', args, { cwd });
       let stdout = '';
