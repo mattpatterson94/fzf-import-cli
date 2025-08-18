@@ -11,13 +11,37 @@ program
   .name('fzf-import')
   .description('CLI tool for finding and importing JavaScript/TypeScript modules')
   .version('1.0.0')
-  .argument('<file>', 'target file to add imports to')
+  .argument('<file>', 'target file to add imports to (supports file:row:col format)')
   .argument('[keyword]', 'keyword to search for (optional - if not provided, interactive mode is used)')
   .option('-d, --debug', 'enable debug output')
-  .action(async (filePath: string, keyword?: string, options?: { debug?: boolean }) => {
+  .action(async (fileArg: string, keyword?: string, options?: { debug?: boolean }) => {
     try {
+      // Parse file argument to check for row:col format
+      const parseFileArgument = (arg: string): { filePath: string; row?: number; col?: number } => {
+        const parts = arg.split(':');
+        if (parts.length === 3) {
+          // file:row:col format
+          const filePath = parts[0];
+          const row = parseInt(parts[1], 10);
+          const col = parseInt(parts[2], 10);
+          
+          if (isNaN(row) || isNaN(col) || row < 1 || col < 1) {
+            throw new Error('Invalid row or column number. Format: file:row:col (1-indexed)');
+          }
+          
+          return { filePath, row, col };
+        } else if (parts.length === 1) {
+          // Just file path
+          return { filePath: parts[0] };
+        } else {
+          throw new Error('Invalid file format. Use either "file" or "file:row:col"');
+        }
+      };
+
+      const parsed = parseFileArgument(fileArg);
+      const absolutePath = path.resolve(parsed.filePath);
+      
       // Validate file path
-      const absolutePath = path.resolve(filePath);
       if (!fs.existsSync(absolutePath)) {
         console.error(`Error: File does not exist: ${absolutePath}`);
         process.exit(1);
@@ -33,8 +57,11 @@ program
 
       const fzfImport = new FzfImport({ debug: options?.debug });
       
-      if (keyword) {
-        // Direct search mode
+      if (parsed.row && parsed.col) {
+        // Position-based search mode
+        await fzfImport.searchAndImportAtPosition(absolutePath, parsed.row, parsed.col);
+      } else if (keyword) {
+        // Keyword search mode
         await fzfImport.searchAndImport(absolutePath, keyword);
       } else {
         // Interactive mode

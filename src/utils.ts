@@ -102,4 +102,57 @@ export class Utils {
     // If no package.json found, return the directory of the original file
     return path.dirname(path.resolve(startPath));
   }
+
+  /**
+   * Extract the symbol/word at a specific position in a file
+   * @param filePath Path to the file
+   * @param row Line number (1-indexed)
+   * @param col Column number (1-indexed)
+   * @returns The symbol at the specified position, or null if not found
+   */
+  static getSymbolAtPosition(filePath: string, row: number, col: number): string | null {
+    try {
+      const content = fs.readFileSync(filePath, 'utf8');
+      const lines = content.split('\n');
+      
+      // Convert to 0-indexed
+      const lineIndex = row - 1;
+      const colIndex = col - 1;
+      
+      if (lineIndex < 0 || lineIndex >= lines.length) {
+        return null;
+      }
+      
+      const line = lines[lineIndex];
+      if (colIndex < 0 || colIndex >= line.length) {
+        return null;
+      }
+      
+      // Find word boundaries around the position
+      const isWordChar = (char: string): boolean => {
+        return /[a-zA-Z0-9_$]/.test(char);
+      };
+      
+      // If current position is not a word character, return null
+      if (!isWordChar(line[colIndex])) {
+        return null;
+      }
+      
+      // Find start of word
+      let start = colIndex;
+      while (start > 0 && isWordChar(line[start - 1])) {
+        start--;
+      }
+      
+      // Find end of word
+      let end = colIndex;
+      while (end < line.length - 1 && isWordChar(line[end + 1])) {
+        end++;
+      }
+      
+      return line.substring(start, end + 1);
+    } catch (error) {
+      return null;
+    }
+  }
 }

@@ -50,6 +50,24 @@ export class FzfImport {
   }
 
   /**
+   * Search for imports using symbol at specific position and add to file
+   */
+  async searchAndImportAtPosition(filePath: string, row: number, col: number): Promise<void> {
+    this.log(`Position-based search at ${filePath}:${row}:${col}`);
+    
+    const symbol = Utils.getSymbolAtPosition(filePath, row, col);
+    if (!symbol) {
+      console.log(`No symbol found at position ${row}:${col}`);
+      return;
+    }
+
+    this.log(`Found symbol at position: "${symbol}"`);
+    
+    // Use the existing searchAndImport method with the extracted symbol
+    await this.searchAndImport(filePath, symbol);
+  }
+
+  /**
    * Interactive import selection
    */
   async interactiveImport(filePath: string): Promise<void> {
