@@ -22,20 +22,20 @@ export class Config {
       // import { MyModule } from 'lib/my_module';
       // import * as mobx from 'mobx'
       // import styles from "myfile.css"
-      // Excludes relative paths like "./myfile.css"
-      regex: "^import\\s*(type\\s+)?(\\*\\s*as)?(\\*?\\s*\\{?[^}]*%s[^}]*\\}?|\\*?\\s*%s)\\s*from\\s*[\\\"\\']@?\\/?\\w",
+      // Excludes relative paths like "./myfile.css" or "../myfile.css"
+      regex: "^import\\s*(type\\s+)?(\\*\\s*as)?(\\*?\\s*\\{?[^}]*%s[^}]*\\}?|\\*?\\s*%s)\\s*from\\s*[\\\"\\'](?!\\.\\/|\\.\\.\\/)[@\\w]",
       glob: ['ts', 'tsx', 'js', 'jsx']
     },
     typescriptreact: {
-      regex: "^import\\s*(type\\s+)?(\\*\\s*as)?(\\*?\\s*\\{?[^}]*%s[^}]*\\}?|\\*?\\s*%s)\\s*from\\s*[\\\"\\']@?\\/?\\w",
+      regex: "^import\\s*(type\\s+)?(\\*\\s*as)?(\\*?\\s*\\{?[^}]*%s[^}]*\\}?|\\*?\\s*%s)\\s*from\\s*[\\\"\\'](?!\\.\\/|\\.\\.\\/)[@\\w]",
       glob: ['ts', 'tsx', 'js', 'jsx']
     },
     javascript: {
-      regex: "^import\\s*(type\\s+)?(\\*\\s*as)?(\\*?\\s*\\{?[^}]*%s[^}]*\\}?|\\*?\\s*%s)\\s*from\\s*[\\\"\\']@?\\/?\\w",
+      regex: "^import\\s*(type\\s+)?(\\*\\s*as)?(\\*?\\s*\\{?[^}]*%s[^}]*\\}?|\\*?\\s*%s)\\s*from\\s*[\\\"\\'](?!\\.\\/|\\.\\.\\/)[@\\w]",
       glob: ['ts', 'tsx', 'js', 'jsx']
     },
     javascriptreact: {
-      regex: "^import\\s*(type\\s+)?(\\*\\s*as)?(\\*?\\s*\\{?[^}]*%s[^}]*\\}?|\\*?\\s*%s)\\s*from\\s*[\\\"\\']@?\\/?\\w",
+      regex: "^import\\s*(type\\s+)?(\\*\\s*as)?(\\*?\\s*\\{?[^}]*%s[^}]*\\}?|\\*?\\s*%s)\\s*from\\s*[\\\"\\'](?!\\.\\/|\\.\\.\\/)[@\\w]",
       glob: ['ts', 'tsx', 'js', 'jsx']
     }
   };
@@ -72,8 +72,8 @@ export class Config {
       return null;
     }
 
-    // For now, use a simpler pattern to test
-    const pattern = `^import.*${keyword}`;
+    // Use a pattern that excludes relative imports (those with './' or '../')
+    const pattern = `^import.*${keyword}.*from\\s+['"]((?!\\.\\/|\\.\\.\\/).*)['"]\$`;
     const glob = `--glob '*.{${config.glob.join(',')}}'`;
 
     return { pattern, glob };

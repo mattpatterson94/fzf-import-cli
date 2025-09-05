@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { Transform } from 'stream';
 import { Utils } from './utils';
 import { Config } from './config';
 import * as path from 'path';
@@ -148,6 +149,62 @@ export class FzfImport {
   }
 
   /**
+   * Create a transform stream that deduplicates lines
+   */
+  private createDeduplicateStream(): Transform {
+    const seen = new Set<string>();
+    let buffer = '';
+    
+    return new Transform({
+      objectMode: false,
+      transform(chunk: Buffer, encoding: string, callback) {
+        // Add chunk to buffer and split by lines
+        buffer += chunk.toString();
+        const lines = buffer.split('\n');
+        
+        // Keep the last incomplete line in buffer
+        buffer = lines.pop() || '';
+        
+        const uniqueLines: string[] = [];
+        
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (trimmedLine) {
+            if (!seen.has(trimmedLine)) {
+              seen.add(trimmedLine);
+              uniqueLines.push(line);
+            }
+            // Skip duplicates
+          } else {
+            // Keep empty lines for formatting
+            uniqueLines.push(line);
+          }
+        }
+        
+        if (uniqueLines.length > 0) {
+          callback(null, uniqueLines.join('\n') + '\n');
+        } else {
+          callback();
+        }
+      },
+      
+      // Handle final buffer content
+      flush(callback) {
+        if (buffer.trim()) {
+          const trimmedLine = buffer.trim();
+          if (!seen.has(trimmedLine)) {
+            callback(null, buffer);
+          } else {
+            callback();
+          }
+        } else {
+          callback();
+        }
+      }
+    });
+  }
+
+  /**
    * Stream search results directly from ripgrep to fzf for real-time filtering
    */
   private async streamingSearchAndSelect(pattern: string, targetFile: string, prompt: string): Promise<string | null> {
@@ -168,7 +225,7 @@ export class FzfImport {
         '--border'
       ];
 
-      this.log(`Streaming search: rg ${rgArgs.join(' ')} | fzf`);
+      this.log(`Streaming search with deduplication: rg ${rgArgs.join(' ')} | dedupe | fzf`);
       this.log(`Project root: ${cwd}`);
 
       // Start both processes
@@ -178,8 +235,11 @@ export class FzfImport {
       let fzfOutput = '';
       let fzfError = '';
 
-      // Pipe ripgrep output directly to fzf input
-      rg.stdout.pipe(fzf.stdin);
+      // Create deduplication stream
+      const deduplicateStream = this.createDeduplicateStream();
+
+      // Pipe: ripgrep -> deduplicate -> fzf
+      rg.stdout.pipe(deduplicateStream).pipe(fzf.stdin);
 
       // Handle pipe errors (EPIPE when fzf closes early)
       rg.stdout.on('error', (err: any) => {
@@ -188,6 +248,14 @@ export class FzfImport {
           return;
         }
         this.log(`Ripgrep stdout error: ${err.message}`);
+      });
+
+      deduplicateStream.on('error', (err: any) => {
+        if (err.code === 'EPIPE') {
+          this.log('Deduplicate stream pipe closed (expected when selection made)');
+          return;
+        }
+        this.log(`Deduplicate stream error: ${err.message}`);
       });
 
       // Handle fzf output
@@ -221,7 +289,7 @@ export class FzfImport {
 
       // Handle fzf completion
       fzf.on('close', (code) => {
-        // Kill ripgrep when fzf closes to prevent EPIPE errors
+        // Clean up streams and processes when fzf closes
         if (!rg.killed) {
           rg.kill('SIGTERM');
           // Force kill after timeout if needed
@@ -231,6 +299,9 @@ export class FzfImport {
             }
           }, 1000);
         }
+        
+        // Clean up the deduplicate stream
+        deduplicateStream.destroy();
 
         if (code === 130) {
           // User cancelled

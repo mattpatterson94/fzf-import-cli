@@ -9,8 +9,9 @@ A CLI tool for finding and importing JavaScript/TypeScript modules when LSP fail
 - **Interactive Mode**: `fzf-import file.ts` - Use fzf to select from available imports
 - **Keyword Search**: `fzf-import file.ts "React"` - Search for specific keyword in imports
 - **Position-Based Search**: `fzf-import file.ts:4:25` - Extract symbol at specific position and search for imports
+- **Real-Time Streaming**: Results appear instantly as ripgrep finds them (no waiting!)
 - **Smart Import Placement**: Adds imports at TOP of import block, after comments
-- **Duplicate Detection**: Prevents re-adding existing imports
+- **Duplicate Detection**: Real-time deduplication and prevents re-adding existing imports
 - **Project-Aware Search**: Searches from nearest package.json directory
 - **Multi-Language Support**: TypeScript, JavaScript, TSX, JSX files
 
@@ -27,9 +28,10 @@ A CLI tool for finding and importing JavaScript/TypeScript modules when LSP fail
 
 - `Utils.findProjectRoot()`: Walks up directories to find nearest package.json
 - `Utils.getSymbolAtPosition()`: Extracts symbol/word at specific file position
-- `FzfImport.searchImports()`: Uses ripgrep to find import statements
+- `FzfImport.streamingSearchAndSelect()`: Real-time streaming search with deduplication
+- `FzfImport.createDeduplicateStream()`: Transform stream for removing duplicate results
 - `FzfImport.searchAndImportAtPosition()`: Position-based import search
-- `FzfImport.selectWithFzf()`: Interactive selection using system fzf
+- `FzfImport.selectWithFzf()`: Interactive selection using system fzf (fallback)
 - `Utils.addImportToFile()`: Smart import insertion at TOP of import block
 
 ## Dependencies
@@ -74,7 +76,9 @@ pnpm run type-check
 
 3. **Project Scope**: Starts search from nearest `package.json` directory
 
-4. **Exclusions**: Ignores lock files and follows `.gitignore` patterns
+4. **Streaming with Deduplication**: Results stream in real-time with duplicates removed
+
+5. **Exclusions**: Ignores lock files and follows `.gitignore` patterns
 
 ## Import Placement Strategy
 
@@ -135,6 +139,21 @@ fzf-import-cli/
 ├── README.md           # User documentation
 └── CLAUDE.md          # This file - development context
 ```
+
+## Streaming Architecture
+
+The tool uses a streaming pipeline for optimal performance on large codebases:
+
+```
+ripgrep → Transform(dedupe) → fzf
+```
+
+**Benefits:**
+- **Real-time results**: Results appear as ripgrep finds them
+- **No memory buildup**: Streams data instead of collecting in memory
+- **Instant interaction**: Can filter/select while search continues
+- **Duplicate removal**: Transform stream eliminates duplicates in real-time
+- **Clean process management**: Proper cleanup prevents EPIPE errors
 
 ## Future Enhancement Ideas
 
