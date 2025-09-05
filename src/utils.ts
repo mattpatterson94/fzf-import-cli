@@ -3,6 +3,87 @@ import * as path from 'path';
 
 export class Utils {
   /**
+   * Calculate relevance score between a search keyword and an import statement
+   * Higher score means better match
+   */
+  static calculateRelevanceScore(importLine: string, keyword: string): number {
+    if (!keyword || !importLine) return 0;
+    
+    // Extract the import name
+    const importMatch = importLine.match(/from\s+['"](.*?)['"]/);
+    const importName = importMatch ? importMatch[1] : '';
+    
+    // Extract symbol names
+    const symbolsMatch = importLine.match(/import\s+(?:type\s+)?({[^}]*}|\*\s+as\s+\w+|\w+)/);
+    const symbolsText = symbolsMatch ? symbolsMatch[1] : '';
+    
+    let score = 0;
+    
+    // Exact match in the import path (highest priority)
+    if (importName && importName.includes(keyword)) {
+      // Direct match in module name is highest priority
+      score += 100;
+      
+      // Exact match is better than partial
+      if (importName === keyword) {
+        score += 50;
+      }
+      
+      // Match at start of segment is better
+      const segments = importName.split('/');
+      for (const segment of segments) {
+        if (segment.startsWith(keyword)) {
+          score += 30;
+        }
+      }
+    }
+    
+    // Match in the symbol names (second priority)
+    if (symbolsText && symbolsText.includes(keyword)) {
+      score += 80;
+      
+      // Check if it's a named export with destructuring (has braces)
+      const hasDestructuring = symbolsText.startsWith('{') && symbolsText.endsWith('}');
+      
+      if (hasDestructuring) {
+        // Parse the symbols inside the destructuring
+        const symbolParts = symbolsText.replace(/[{}]/g, '').split(',');
+        
+        // Prefer single imports
+        if (symbolParts.length === 1 && symbolParts[0].trim() === keyword) {
+          // Single import with exact match gets highest score
+          score += 60;
+        } else {
+          // Multiple imports with exact match
+          for (const part of symbolParts) {
+            const trimmed = part.trim();
+            if (trimmed === keyword) {
+              score += 40;
+            } else if (trimmed.startsWith(keyword)) {
+              score += 20;
+            }
+          }
+        }
+      } else {
+        // Default import or namespace import
+        if (symbolsText === keyword) {
+          // Default import with exact match
+          score += 60;
+        } else if (symbolsText.includes(keyword)) {
+          // Namespace import
+          score += 40;
+        }
+      }
+    }
+    
+    // General match in the import line
+    if (score === 0 && importLine.includes(keyword)) {
+      score += 10;
+    }
+    
+    return score;
+  }
+  /**
    * Get file type from file extension
    */
   static getFileType(filePath: string): string {

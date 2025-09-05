@@ -34,7 +34,8 @@ export class FzfImport {
     const selected = await this.streamingSearchAndSelect(
       searchResult.pattern,
       filePath,
-      `Select import for "${keyword}"`
+      `Select import for "${keyword}"`,
+      keyword
     );
 
     if (selected) {
@@ -149,11 +150,16 @@ export class FzfImport {
   }
 
   /**
-   * Create a transform stream that deduplicates lines
+   * Create a transform stream that deduplicates lines and sorts by relevance
+   * @param keyword The keyword to use for relevance sorting (optional)
    */
-  private createDeduplicateStream(): Transform {
+  private createDeduplicateStream(keyword: string = ''): Transform {
     const seen = new Set<string>();
     let buffer = '';
+    
+    // Store results for sorting (if keyword is provided)
+    const allResults: { line: string; score: number }[] = [];
+    const shouldSort = keyword !== '';
     
     // Helper function to check if a line is a relative import
     const isRelativeImport = (line: string): boolean => {
@@ -184,7 +190,15 @@ export class FzfImport {
             // Add unique non-relative imports
             if (!seen.has(trimmedLine)) {
               seen.add(trimmedLine);
-              uniqueLines.push(line);
+              
+              // If we're sorting by relevance, store the line and its score
+              if (shouldSort) {
+                const score = Utils.calculateRelevanceScore(trimmedLine, keyword);
+                allResults.push({ line, score });
+              } else {
+                // Otherwise just add to output directly
+                uniqueLines.push(line);
+              }
             }
             // Skip duplicates
           } else {
@@ -193,7 +207,8 @@ export class FzfImport {
           }
         }
         
-        if (uniqueLines.length > 0) {
+        // If we're not sorting, output lines normally
+        if (!shouldSort && uniqueLines.length > 0) {
           callback(null, uniqueLines.join('\n') + '\n');
         } else {
           callback();
@@ -202,19 +217,45 @@ export class FzfImport {
       
       // Handle final buffer content
       flush(callback) {
+        // Handle any remaining buffer content
         if (buffer.trim()) {
           const trimmedLine = buffer.trim();
           // Skip relative imports
           if (isRelativeImport(trimmedLine)) {
-            callback();
-            return;
+            // Skip the line but don't return early if we're sorting
+            if (!shouldSort) {
+              callback();
+              return;
+            }
+          } else if (!seen.has(trimmedLine)) {
+            seen.add(trimmedLine);
+            
+            // Add to results or output directly
+            if (shouldSort) {
+              const score = Utils.calculateRelevanceScore(trimmedLine, keyword);
+              allResults.push({ line: buffer, score });
+            } else {
+              callback(null, buffer);
+              return;
+            }
           }
+        }
+        
+        // If we're sorting, do the final sort and output
+        if (shouldSort && allResults.length > 0) {
+          // Sort by score (higher first)
+          allResults.sort((a, b) => {
+            // Primary sort by score
+            const scoreDiff = b.score - a.score;
+            if (scoreDiff !== 0) return scoreDiff;
+            
+            // Secondary sort by length (shorter imports first)
+            return a.line.length - b.line.length;
+          });
           
-          if (!seen.has(trimmedLine)) {
-            callback(null, buffer);
-          } else {
-            callback();
-          }
+          // Output sorted results
+          const sortedLines = allResults.map(r => r.line);
+          callback(null, sortedLines.join('\n') + '\n');
         } else {
           callback();
         }
@@ -224,8 +265,12 @@ export class FzfImport {
 
   /**
    * Stream search results directly from ripgrep to fzf for real-time filtering
+   * @param pattern The ripgrep search pattern
+   * @param targetFile The target file to add imports to
+   * @param prompt The prompt to display in fzf
+   * @param keyword The keyword to use for relevance sorting (optional)
    */
-  private async streamingSearchAndSelect(pattern: string, targetFile: string, prompt: string): Promise<string | null> {
+  private async streamingSearchAndSelect(pattern: string, targetFile: string, prompt: string, keyword: string = ''): Promise<string | null> {
     return new Promise((resolve, reject) => {
       const cwd = Utils.findProjectRoot(targetFile);
       const rgArgs = [
@@ -243,7 +288,11 @@ export class FzfImport {
         '--border'
       ];
 
-      this.log(`Streaming search with deduplication: rg ${rgArgs.join(' ')} | dedupe | fzf`);
+      if (keyword) {
+        this.log(`Streaming search with deduplication and relevance sorting: rg ${rgArgs.join(' ')} | dedupe+sort | fzf`);
+      } else {
+        this.log(`Streaming search with deduplication: rg ${rgArgs.join(' ')} | dedupe | fzf`);
+      }
       this.log(`Project root: ${cwd}`);
 
       // Start both processes
@@ -253,8 +302,8 @@ export class FzfImport {
       let fzfOutput = '';
       let fzfError = '';
 
-      // Create deduplication stream
-      const deduplicateStream = this.createDeduplicateStream();
+      // Create deduplication stream with keyword for sorting
+      const deduplicateStream = this.createDeduplicateStream(keyword);
 
       // Pipe: ripgrep -> deduplicate -> fzf
       rg.stdout.pipe(deduplicateStream).pipe(fzf.stdin);
