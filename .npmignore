@@ -1,0 +1,26 @@
+# Source files
+src/
+
+# Development files
+.git/
+.github/
+.gitignore
+.vscode/
+tsconfig.json
+*.log
+
+# Environment files
+.env
+.env.*
+
+# Test files
+tests/
+test/
+*.test.ts
+*.spec.ts
+
+# Other unnecessary files
+node_modules/
+coverage/
+.nyc_output/
+.DS_Store
