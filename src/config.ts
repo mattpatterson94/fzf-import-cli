@@ -18,24 +18,20 @@ export class Config {
   // File type configurations (ported from config.lua)
   static readonly fileTypes: Record<string, FileTypeConfig> = {
     typescript: {
-      // Matches import statements like:
-      // import { MyModule } from 'lib/my_module';
-      // import * as mobx from 'mobx'
-      // import styles from "myfile.css"
-      // Excludes relative paths like "./myfile.css" or "../myfile.css"
-      regex: "^import\\s*(type\\s+)?(\\*\\s*as)?(\\*?\\s*\\{?[^}]*%s[^}]*\\}?|\\*?\\s*%s)\\s*from\\s*[\\\"\\'](?!\\.\\/|\\.\\.\\/)[@\\w]",
+      // Simplified pattern - we filter relative imports in the transform stream
+      regex: "^import.*%s.*from",
       glob: ['ts', 'tsx', 'js', 'jsx']
     },
     typescriptreact: {
-      regex: "^import\\s*(type\\s+)?(\\*\\s*as)?(\\*?\\s*\\{?[^}]*%s[^}]*\\}?|\\*?\\s*%s)\\s*from\\s*[\\\"\\'](?!\\.\\/|\\.\\.\\/)[@\\w]",
+      regex: "^import.*%s.*from",
       glob: ['ts', 'tsx', 'js', 'jsx']
     },
     javascript: {
-      regex: "^import\\s*(type\\s+)?(\\*\\s*as)?(\\*?\\s*\\{?[^}]*%s[^}]*\\}?|\\*?\\s*%s)\\s*from\\s*[\\\"\\'](?!\\.\\/|\\.\\.\\/)[@\\w]",
+      regex: "^import.*%s.*from",
       glob: ['ts', 'tsx', 'js', 'jsx']
     },
     javascriptreact: {
-      regex: "^import\\s*(type\\s+)?(\\*\\s*as)?(\\*?\\s*\\{?[^}]*%s[^}]*\\}?|\\*?\\s*%s)\\s*from\\s*[\\\"\\'](?!\\.\\/|\\.\\.\\/)[@\\w]",
+      regex: "^import.*%s.*from",
       glob: ['ts', 'tsx', 'js', 'jsx']
     }
   };
@@ -72,8 +68,8 @@ export class Config {
       return null;
     }
 
-    // Use a pattern that excludes relative imports (those with './' or '../')
-    const pattern = `^import.*${keyword}.*from\\s+['"]((?!\\.\\/|\\.\\.\\/).*)['"]\$`;
+    // First use a simple pattern to find imports with the keyword
+    const pattern = `^import.*${keyword}`;
     const glob = `--glob '*.{${config.glob.join(',')}}'`;
 
     return { pattern, glob };

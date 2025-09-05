@@ -155,6 +155,12 @@ export class FzfImport {
     const seen = new Set<string>();
     let buffer = '';
     
+    // Helper function to check if a line is a relative import
+    const isRelativeImport = (line: string): boolean => {
+      // Check if it's an import from "./something" or "../something"
+      return /import.*from\s+['"]\.[\.\/]/.test(line);
+    };
+    
     return new Transform({
       objectMode: false,
       transform(chunk: Buffer, encoding: string, callback) {
@@ -170,6 +176,12 @@ export class FzfImport {
         for (const line of lines) {
           const trimmedLine = line.trim();
           if (trimmedLine) {
+            // Skip relative imports
+            if (isRelativeImport(trimmedLine)) {
+              continue;
+            }
+            
+            // Add unique non-relative imports
             if (!seen.has(trimmedLine)) {
               seen.add(trimmedLine);
               uniqueLines.push(line);
@@ -192,6 +204,12 @@ export class FzfImport {
       flush(callback) {
         if (buffer.trim()) {
           const trimmedLine = buffer.trim();
+          // Skip relative imports
+          if (isRelativeImport(trimmedLine)) {
+            callback();
+            return;
+          }
+          
           if (!seen.has(trimmedLine)) {
             callback(null, buffer);
           } else {
