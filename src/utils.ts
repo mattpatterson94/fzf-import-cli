@@ -3,6 +3,31 @@ import * as path from 'path';
 
 export class Utils {
   /**
+   * Check if required executables are available
+   * @returns An error message or null if all dependencies are available
+   */
+  static checkDependencies(): string | null {
+    try {
+      const { spawnSync } = require('child_process');
+      
+      // Check ripgrep
+      const rg = spawnSync('rg', ['--version'], { encoding: 'utf8' });
+      if (rg.error || rg.status !== 0) {
+        return 'ripgrep (rg) is not installed or not available in PATH. Please install it: https://github.com/BurntSushi/ripgrep';
+      }
+      
+      // Check fzf
+      const fzf = spawnSync('fzf', ['--version'], { encoding: 'utf8' });
+      if (fzf.error || fzf.status !== 0) {
+        return 'fzf is not installed or not available in PATH. Please install it: https://github.com/junegunn/fzf';
+      }
+      
+      return null;
+    } catch (error) {
+      return `Error checking dependencies: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+  /**
    * Calculate relevance score between a search keyword and an import statement
    * Higher score means better match
    */

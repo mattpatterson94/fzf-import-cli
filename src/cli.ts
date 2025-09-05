@@ -2,6 +2,7 @@
 
 import { Command } from 'commander';
 import { FzfImport } from './fzf-import';
+import { Utils } from './utils';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -16,6 +17,13 @@ program
   .option('-d, --debug', 'enable debug output')
   .action(async (fileArg: string, keyword?: string, options?: { debug?: boolean }) => {
     try {
+      // Check dependencies first
+      const dependencyError = Utils.checkDependencies();
+      if (dependencyError) {
+        console.error(`Error: ${dependencyError}`);
+        process.exit(1);
+      }
+
       // Parse file argument to check for row:col format
       const parseFileArgument = (arg: string): { filePath: string; row?: number; col?: number } => {
         const parts = arg.split(':');

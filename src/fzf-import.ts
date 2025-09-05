@@ -26,9 +26,9 @@ export class FzfImport {
       throw new Error(`Unsupported file type: ${fileType}`);
     }
 
-    this.log(`Streaming search for imports containing: ${keyword}`);
-    this.log(`File type: ${fileType}`);
-    this.log(`Pattern: ${searchResult.pattern}`);
+    this.log(`Streaming search for imports containing: ${keyword}`, 'search');
+    this.log(`File type: ${fileType}`, 'search');
+    this.log(`Pattern: ${searchResult.pattern}`, 'search');
 
     // Use streaming search for real-time results
     const selected = await this.streamingSearchAndSelect(
@@ -167,6 +167,9 @@ export class FzfImport {
     // Batch size control (smaller batches = faster display)
     const BATCH_SIZE = 20;
     
+    // Maximum number of results to keep in memory
+    const MAX_RESULTS = 1000;
+    
     // Helper function to check if a line is a relative import
     const isRelativeImport = (line: string): boolean => {
       // Fast check for relative imports
@@ -234,7 +237,29 @@ export class FzfImport {
               if (shouldSort) {
                 // For sorting mode, add to current batch with score
                 const score = getScore(trimmedLine);
-                currentBatch.push({ line, score });
+                
+                // Memory management - if we have too many results, only keep high scoring ones
+                if (currentBatch.length >= MAX_RESULTS) {
+                  // Only keep if score is higher than the lowest score in the batch
+                  let minScore = Infinity;
+                  let minIndex = -1;
+                  
+                  // Find lowest score in batch
+                  for (let i = 0; i < currentBatch.length; i++) {
+                    if (currentBatch[i].score < minScore) {
+                      minScore = currentBatch[i].score;
+                      minIndex = i;
+                    }
+                  }
+                  
+                  // Replace lowest score item if this one is better
+                  if (score > minScore && minIndex !== -1) {
+                    currentBatch[minIndex] = { line, score };
+                  }
+                } else {
+                  // We have room, just add it
+                  currentBatch.push({ line, score });
+                }
                 
                 // Process batch when it gets large enough
                 if (currentBatch.length >= BATCH_SIZE) {
@@ -316,11 +341,12 @@ export class FzfImport {
       ];
 
       if (keyword) {
-        this.log(`Streaming search with deduplication and relevance sorting: rg ${rgArgs.join(' ')} | dedupe+sort | fzf`);
+        this.log(`Streaming search with deduplication and relevance sorting: rg ${rgArgs.join(' ')} | dedupe+sort | fzf`, 'process');
+        this.log(`Using relevance sorting with keyword: "${keyword}"`, 'search');
       } else {
-        this.log(`Streaming search with deduplication: rg ${rgArgs.join(' ')} | dedupe | fzf`);
+        this.log(`Streaming search with deduplication: rg ${rgArgs.join(' ')} | dedupe | fzf`, 'process');
       }
-      this.log(`Project root: ${cwd}`);
+      this.log(`Project root: ${cwd}`, 'search');
 
       // Start both processes
       const rg = spawn('rg', rgArgs, { cwd });
@@ -352,18 +378,28 @@ export class FzfImport {
         this.log(`Deduplicate stream error: ${err.message}`);
       });
 
-      // Handle fzf output
+      // Memory-efficient output handling - only keep what we need
+      const maxBufferSize = 1024 * 100; // 100KB limit
+      
+      // Handle fzf output (only keep up to buffer size limit)
       fzf.stdout.on('data', (data) => {
-        fzfOutput += data.toString();
+        const str = data.toString();
+        fzfOutput = (fzfOutput + str).slice(-maxBufferSize);
       });
 
+      // Only store errors up to a reasonable size
       fzf.stderr.on('data', (data) => {
-        fzfError += data.toString();
+        const str = data.toString();
+        fzfError = (fzfError + str).slice(-maxBufferSize);
       });
 
-      // Handle ripgrep errors
+      // Handle ripgrep errors (limit buffer size)
       rg.stderr.on('data', (data) => {
-        this.log(`ripgrep error: ${data.toString()}`);
+        const str = data.toString().trim();
+        // Only log if there's actual content, and limit size
+        if (str) {
+          this.log(`ripgrep error: ${str.slice(0, 500)}`, 'error');
+        }
       });
 
       // When ripgrep finishes, close fzf input
@@ -491,6 +527,7 @@ export class FzfImport {
     try {
       Utils.addImportToFile(filePath, importLine);
       console.log(`Added import: ${importLine}`);
+      this.log(`Successfully added import to ${filePath}`, 'process');
     } catch (error) {
       throw new Error(`Failed to add import to file: ${error instanceof Error ? error.message : error}`);
     }
@@ -499,9 +536,26 @@ export class FzfImport {
   /**
    * Log debug messages if debug mode is enabled
    */
-  private log(message: string): void {
-    if (this.options.debug) {
-      console.error(`[DEBUG] ${message}`);
+  private log(message: string, category: 'info' | 'search' | 'process' | 'error' = 'info'): void {
+    if (!this.options.debug) return;
+    
+    const timestamp = new Date().toISOString().slice(11, 23); // HH:MM:SS.sss
+    let prefix = '';
+    
+    switch (category) {
+      case 'search':
+        prefix = '[SEARCH]';
+        break;
+      case 'process': 
+        prefix = '[PROCESS]';
+        break;
+      case 'error':
+        prefix = '[ERROR]';
+        break;
+      default:
+        prefix = '[INFO]';
     }
+    
+    console.error(`[${timestamp}] ${prefix} ${message}`);
   }
 }
