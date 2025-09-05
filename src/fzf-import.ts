@@ -157,14 +157,53 @@ export class FzfImport {
     const seen = new Set<string>();
     let buffer = '';
     
-    // Store results for sorting (if keyword is provided)
-    const allResults: { line: string; score: number }[] = [];
+    // Performance optimization: Use a score cache to avoid recalculating scores
+    const scoreCache = new Map<string, number>();
+    
+    // Store results for batch processing
+    const currentBatch: { line: string; score: number }[] = [];
     const shouldSort = keyword !== '';
+    
+    // Batch size control (smaller batches = faster display)
+    const BATCH_SIZE = 20;
     
     // Helper function to check if a line is a relative import
     const isRelativeImport = (line: string): boolean => {
-      // Check if it's an import from "./something" or "../something"
-      return /import.*from\s+['"]\.[\.\/]/.test(line);
+      // Fast check for relative imports
+      return line.includes("from './") || line.includes("from '../");
+    };
+    
+    // Helper function to calculate and cache score
+    const getScore = (line: string): number => {
+      if (scoreCache.has(line)) {
+        return scoreCache.get(line)!;
+      }
+      
+      const score = Utils.calculateRelevanceScore(line, keyword);
+      scoreCache.set(line, score);
+      return score;
+    };
+    
+    // Helper function to sort and output a batch
+    const processBatch = (callback: any) => {
+      if (currentBatch.length === 0) {
+        callback();
+        return;
+      }
+      
+      // Sort by score and then by length
+      currentBatch.sort((a, b) => {
+        const scoreDiff = b.score - a.score;
+        if (scoreDiff !== 0) return scoreDiff;
+        return a.line.length - b.line.length;
+      });
+      
+      // Output this batch
+      const sortedLines = currentBatch.map(r => r.line);
+      callback(null, sortedLines.join('\n') + '\n');
+      
+      // Clear the batch for next time
+      currentBatch.length = 0;
     };
     
     return new Transform({
@@ -182,7 +221,7 @@ export class FzfImport {
         for (const line of lines) {
           const trimmedLine = line.trim();
           if (trimmedLine) {
-            // Skip relative imports
+            // Fast path: Skip relative imports
             if (isRelativeImport(trimmedLine)) {
               continue;
             }
@@ -191,23 +230,29 @@ export class FzfImport {
             if (!seen.has(trimmedLine)) {
               seen.add(trimmedLine);
               
-              // If we're sorting by relevance, store the line and its score
+              // Process based on sorting mode
               if (shouldSort) {
-                const score = Utils.calculateRelevanceScore(trimmedLine, keyword);
-                allResults.push({ line, score });
+                // For sorting mode, add to current batch with score
+                const score = getScore(trimmedLine);
+                currentBatch.push({ line, score });
+                
+                // Process batch when it gets large enough
+                if (currentBatch.length >= BATCH_SIZE) {
+                  processBatch(callback);
+                  return; // Return after processing a batch
+                }
               } else {
-                // Otherwise just add to output directly
+                // For non-sorting mode, just add directly
                 uniqueLines.push(line);
               }
             }
-            // Skip duplicates
-          } else {
-            // Keep empty lines for formatting
+          } else if (!shouldSort) {
+            // Only keep empty lines in non-sorting mode
             uniqueLines.push(line);
           }
         }
         
-        // If we're not sorting, output lines normally
+        // Output non-sorted results immediately
         if (!shouldSort && uniqueLines.length > 0) {
           callback(null, uniqueLines.join('\n') + '\n');
         } else {
@@ -220,20 +265,14 @@ export class FzfImport {
         // Handle any remaining buffer content
         if (buffer.trim()) {
           const trimmedLine = buffer.trim();
-          // Skip relative imports
-          if (isRelativeImport(trimmedLine)) {
-            // Skip the line but don't return early if we're sorting
-            if (!shouldSort) {
-              callback();
-              return;
-            }
-          } else if (!seen.has(trimmedLine)) {
+          
+          if (!isRelativeImport(trimmedLine) && !seen.has(trimmedLine)) {
             seen.add(trimmedLine);
             
-            // Add to results or output directly
+            // Process based on sorting mode
             if (shouldSort) {
-              const score = Utils.calculateRelevanceScore(trimmedLine, keyword);
-              allResults.push({ line: buffer, score });
+              const score = getScore(trimmedLine);
+              currentBatch.push({ line: buffer, score });
             } else {
               callback(null, buffer);
               return;
@@ -241,21 +280,9 @@ export class FzfImport {
           }
         }
         
-        // If we're sorting, do the final sort and output
-        if (shouldSort && allResults.length > 0) {
-          // Sort by score (higher first)
-          allResults.sort((a, b) => {
-            // Primary sort by score
-            const scoreDiff = b.score - a.score;
-            if (scoreDiff !== 0) return scoreDiff;
-            
-            // Secondary sort by length (shorter imports first)
-            return a.line.length - b.line.length;
-          });
-          
-          // Output sorted results
-          const sortedLines = allResults.map(r => r.line);
-          callback(null, sortedLines.join('\n') + '\n');
+        // Process any remaining batch items
+        if (shouldSort && currentBatch.length > 0) {
+          processBatch(callback);
         } else {
           callback();
         }

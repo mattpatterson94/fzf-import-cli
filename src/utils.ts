@@ -7,78 +7,83 @@ export class Utils {
    * Higher score means better match
    */
   static calculateRelevanceScore(importLine: string, keyword: string): number {
+    // Fast path for empty input
     if (!keyword || !importLine) return 0;
     
-    // Extract the import name
-    const importMatch = importLine.match(/from\s+['"](.*?)['"]/);
-    const importName = importMatch ? importMatch[1] : '';
-    
-    // Extract symbol names
-    const symbolsMatch = importLine.match(/import\s+(?:type\s+)?({[^}]*}|\*\s+as\s+\w+|\w+)/);
-    const symbolsText = symbolsMatch ? symbolsMatch[1] : '';
+    // Fast check: if the line doesn't contain the keyword at all, score = 0
+    // This quick check avoids unnecessary regex operations
+    if (!importLine.toLowerCase().includes(keyword.toLowerCase())) {
+      return 0;
+    }
     
     let score = 0;
     
-    // Exact match in the import path (highest priority)
-    if (importName && importName.includes(keyword)) {
-      // Direct match in module name is highest priority
-      score += 100;
+    // Simple check for single imports (highest priority)
+    // The primary feature the user requested
+    const singleImportMatch = new RegExp(`import\\s+{\\s*${keyword}\\s*}\\s+from`, 'i').test(importLine);
+    if (singleImportMatch) {
+      score += 200; // Very high score for single imports
+    }
+    
+    // Fast extract for the module name
+    const importMatch = importLine.match(/from\s+['"]([^'"]*)['"]/);
+    const importName = importMatch ? importMatch[1] : '';
+    
+    // Fast check for match in module name
+    if (importName) {
+      // Simple check for keyword in module name
+      if (importName.includes(keyword)) {
+        score += 100;
+      }
       
-      // Exact match is better than partial
+      // Direct module name match (highest priority)
       if (importName === keyword) {
         score += 50;
       }
       
-      // Match at start of segment is better
-      const segments = importName.split('/');
-      for (const segment of segments) {
-        if (segment.startsWith(keyword)) {
-          score += 30;
-        }
-      }
-    }
-    
-    // Match in the symbol names (second priority)
-    if (symbolsText && symbolsText.includes(keyword)) {
-      score += 80;
-      
-      // Check if it's a named export with destructuring (has braces)
-      const hasDestructuring = symbolsText.startsWith('{') && symbolsText.endsWith('}');
-      
-      if (hasDestructuring) {
-        // Parse the symbols inside the destructuring
-        const symbolParts = symbolsText.replace(/[{}]/g, '').split(',');
-        
-        // Prefer single imports
-        if (symbolParts.length === 1 && symbolParts[0].trim() === keyword) {
-          // Single import with exact match gets highest score
-          score += 60;
-        } else {
-          // Multiple imports with exact match
-          for (const part of symbolParts) {
-            const trimmed = part.trim();
-            if (trimmed === keyword) {
-              score += 40;
-            } else if (trimmed.startsWith(keyword)) {
-              score += 20;
-            }
+      // Fast check for segment starts with keyword (avoid split if not needed)
+      if (importName.includes('/')) {
+        const segments = importName.split('/');
+        for (const segment of segments) {
+          if (segment.startsWith(keyword)) {
+            score += 30;
+            break; // Only need one match
           }
         }
-      } else {
-        // Default import or namespace import
-        if (symbolsText === keyword) {
-          // Default import with exact match
-          score += 60;
-        } else if (symbolsText.includes(keyword)) {
-          // Namespace import
-          score += 40;
-        }
       }
     }
     
-    // General match in the import line
-    if (score === 0 && importLine.includes(keyword)) {
-      score += 10;
+    // Quick check for destructuring imports with the keyword
+    const hasDestructuring = importLine.includes('{') && importLine.includes('}');
+    if (hasDestructuring) {
+      // Extract symbols between braces (faster than regex when we know braces exist)
+      const openBrace = importLine.indexOf('{');
+      const closeBrace = importLine.indexOf('}', openBrace);
+      if (openBrace > -1 && closeBrace > -1) {
+        const symbolsText = importLine.substring(openBrace + 1, closeBrace);
+        
+        // Check for multiple symbols by counting commas
+        const hasMultipleSymbols = symbolsText.includes(',');
+        
+        if (!hasMultipleSymbols && symbolsText.trim() === keyword) {
+          // Single import with exact match
+          score += 80;
+        } else if (hasMultipleSymbols) {
+          // Multiple imports, check if our keyword is one of them
+          const symbolParts = symbolsText.split(',');
+          if (symbolParts.some(part => part.trim() === keyword)) {
+            score += 40;
+          } else if (symbolParts.some(part => part.trim().startsWith(keyword))) {
+            score += 20;
+          }
+        }
+      }
+    } else if (importLine.startsWith(`import ${keyword} from`)) {
+      // Default import with exact name
+      score += 70;
+    } else if (importLine.includes(`* as ${keyword} from`)) {
+      // Namespace import with exact name
+      score += 60;
     }
     
     return score;
